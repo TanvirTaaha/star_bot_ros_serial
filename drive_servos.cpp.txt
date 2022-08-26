@@ -1,0 +1,220 @@
+/* Sweep
+  by BARRAGAN <http://barraganstudio.com>
+  This example code is in the public domain.
+
+  modified 8 Nov 2013
+  by Scott Fitzgerald
+  https://www.arduino.cc/en/Tutorial/LibraryExamples/Sweep
+*/
+#include <Arduino.h>
+#include <Servo.h>
+
+uint8_t SRV_PINs[] = {6, 9, 10, 11};
+Servo servos[4];
+
+#define INIT_DEG (uint8_t[]) { 5, 5, 5, 5 }
+
+char buff[50];
+
+void go_to_default_position_all();
+int8_t deg_for_big_servo(int8_t deg);
+void gently_rotate_to(uint8_t srv_idx, int16_t degree);
+uint16_t get_current_pos_pulse(uint8_t srv_idx);
+int16_t get_current_pos(uint8_t srv_idx);
+
+void setup()
+{
+    Serial.begin(9600);
+
+    servos[0].attach(SRV_PINs[0]);
+    servos[1].attach(SRV_PINs[1]);
+    servos[2].attach(SRV_PINs[2]);
+    servos[3].attach(SRV_PINs[3]);
+
+    go_to_default_position_all();
+}
+
+#define LOWEST_PWM 525
+#define HIGHEST_PWM 2361
+
+void loop()
+{
+
+    if (Serial.available())
+    {
+        int ch = '0';
+        ch = Serial.read();
+        switch (ch)
+        {
+        case 'a': // grip close
+        {
+            if (servos[0].read() > 2) // decrease degree
+            {
+                servos[0].write(servos[0].read() - 1);
+                sprintf(buff, "Current degree srv1(GRIP-CLOSE): %d", servos[0].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'b': // grip open
+        {
+            if (servos[0].read() < 178) // increase degree
+            {
+                servos[0].write(servos[0].read() + 1);
+                sprintf(buff, "Current degree srv1(GRIP-OPEN): %d", servos[0].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'c': // wrist up
+        {
+            if (servos[1].read() < 178) // increase degree
+            {
+                servos[1].write(servos[1].read() + 1);
+                sprintf(buff, "Current degree srv2(WRIST-UP): %d", servos[1].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'd': // wrist down
+        {
+            if (servos[1].read() > 2) // decrease degree
+            {
+                servos[1].write(servos[1].read() - 1);
+                sprintf(buff, "Current degree srv2(WRIST-DOWN): %d", servos[1].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'e': // Elbow up
+        {
+            if (servos[2].read() > 2) // decrease degree
+            {
+                servos[2].write(servos[2].read() - 1);
+                sprintf(buff, "Current degree srv3(ELBOW-UP): %d", servos[2].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'f': // Elbow down
+        {
+            if (servos[2].read() < 178) // increase degree
+            {
+                servos[2].write(servos[2].read() + 1);
+                sprintf(buff, "Current degree srv3(ELBOW-DOWN): %d", servos[2].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'g': // Shoulder up
+        {
+            if (servos[3].read() < 178) // increase degree
+            {
+                servos[3].write(servos[3].read() + 1);
+                sprintf(buff, "Current degree srv4(SHOULDER-UP): %d", servos[3].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'h': // Shoulder down
+        {
+            if (servos[3].read() > 2) // decrease degree
+            {
+                servos[3].write(servos[3].read() - 1);
+                sprintf(buff, "Current degree srv4(SHOULDER-DOWN): %d", servos[3].read());
+                Serial.println(buff);
+            }
+        }
+        break;
+        case 'q':
+        {
+            go_to_default_position_all();
+        }
+        default:
+            break;
+        }
+    }
+}
+
+void go_to_default_position_all()
+{
+    gently_rotate_to(0, INIT_DEG[0]); // for grip
+    gently_rotate_to(1, INIT_DEG[1]); // for wrist
+    servos[2].write(INIT_DEG[2]); // for elbow
+    servos[3].write(INIT_DEG[3]); // for shoulder
+}
+
+int8_t deg_for_big_servo(int8_t deg)
+{
+    return map(deg, 0, 270, 0, 180);
+}
+
+void gently_rotate_to(uint8_t srv_idx, int16_t degree)
+{
+    int16_t c_pos = get_current_pos(srv_idx);
+    int16_t pos;
+    if (degree < c_pos)
+    {
+        for (pos = c_pos; pos >= degree; pos -= 1)
+        {
+            servos[srv_idx].write(pos);
+            Serial.print("degree: ");
+            Serial.println(pos);
+            delay(15);
+        }
+    }
+    else if (degree > c_pos)
+    {
+        for (pos = c_pos; pos <= degree; pos += 1)
+        {
+            servos[srv_idx].write(pos);
+            Serial.print("degree: ");
+            Serial.println(pos);
+            delay(15);
+        }
+    }
+    Serial.print("Final angle:");
+    Serial.println(degree);
+}
+
+uint16_t get_current_pos_pulse(int16_t srv_idx)
+{
+    pinMode(SRV_PINs[srv_idx], OUTPUT);
+    digitalWrite(SRV_PINs[srv_idx], HIGH);
+    delayMicroseconds(50); // send a 50 us pulse to get the current position
+    digitalWrite(SRV_PINs[srv_idx], LOW);
+    pinMode(SRV_PINs[srv_idx], INPUT);
+    uint16_t pos_pulse = pulseIn(SRV_PINs[srv_idx], HIGH); // e.g. 500-2500
+    return pos_pulse;
+}
+
+int16_t get_current_pos(uint8_t srv_idx)
+{
+    uint16_t pos_pulse = get_current_pos_pulse(srv_idx);
+    uint8_t pos_degree = map(pos_pulse, LOWEST_PWM, HIGHEST_PWM, 0, 180);
+    return pos_degree;
+}
+
+// void sweep(int sweep_angle)
+// {
+//     int pos = 0;
+//     for (pos = 0; pos <= sweep_angle; pos += 1)
+//     { // goes from 0 degrees to 180 degrees
+//         // in steps of 1 degree
+//         myservo.write(pos); // tell servo to go to position in variable 'pos'
+//         Serial.print("degree: ");
+//         Serial.println(pos);
+//         delay(15); // waits 15 ms for the servo to reach the position
+//     }
+//     Serial.println("Forward done");
+//     delay(500);
+//     for (pos = sweep_angle; pos >= 0; pos -= 1)
+//     {                       // goes from 180 degrees to 0 degrees
+//         myservo.write(pos); // tell servo to go to position in variable 'pos'
+//         Serial.print("degree: ");
+//         Serial.println(pos);
+//         delay(15); // waits 15 ms for the servo to reach the position
+//     }
+//     Serial.println("Backward done");
+//     delay(500);
+// }

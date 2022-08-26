@@ -1,0 +1,40 @@
+#include <Arduino.h>
+#include <AccelStepper.h>
+
+// Define pin connections & motor's steps per revolution
+const int dirPin = 2;
+const int stepPin = 3;
+const int stepsPerRevolution = 200; 
+const float per_step_degree = 1.8/8;
+
+AccelStepper stepper = AccelStepper(AccelStepper::DRIVER, stepPin, dirPin);
+
+int degtostep(float deg) {
+	return (int) deg/(1.0*per_step_degree);
+}
+
+void setup()
+{
+	Serial.begin(9600);
+	// Serial.println("g and h");
+	// Declare pins as Outputs
+	stepper.setMaxSpeed(200);
+	stepper.setAcceleration(150);
+}
+
+void loop()
+{
+	// Set the target position:
+	stepper.moveTo(degtostep(60));
+	// Run to target position with set speed and acceleration/deceleration:
+	stepper.runToPosition();
+
+	delay(1000);
+
+	// Move back to zero:
+	stepper.moveTo(0);
+	stepper.runToPosition();
+
+	delay(1000);
+}
+

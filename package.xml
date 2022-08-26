@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>ros_serial_test</name>
+  <name>star_bot</name>
   <version>0.0.0</version>
   <description>The ros_serial_test package</description>
 

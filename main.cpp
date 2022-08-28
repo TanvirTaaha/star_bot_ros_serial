@@ -10,8 +10,8 @@
 #include <Servo.h>
 #include <AccelStepper.h>
 #define SHO_REF 28
-#define ELB_REF -80
-#define PIT_REF 25
+#define ELB_REF 36
+#define PIT_REF 107
 const uint8_t dirPin = 2;
 const uint8_t stepPin = 3;
 #define MICRO_STEP 1
@@ -54,7 +54,6 @@ void setup()
     stepper.setCurrentPosition(0);
     // default
     servos[0].write(10);
-    // servos[1].write(PIT_REF);
     gently_rotate_to(1, PIT_REF);
     go_to_degree_big_servo(2, deg_for_big_servo(abs(ELB_REF)));
     go_to_degree_big_servo(3, deg_for_big_servo(SHO_REF+70));
@@ -70,6 +69,7 @@ void loop()
     {
         int ch = '0';
         ch = Serial.read();
+        stepper.disableOutputs();
         switch (ch)
         {
         case 'a': // grip close
@@ -84,7 +84,7 @@ void loop()
         break;
         case 'b': // grip open
         {
-            if (servos[0].read() <= 30) // increase degree
+            if (servos[0].read() <= 60) // increase degree
             {
                 servos[0].write(servos[0].read() + 1);
                 sprintf(buff, "Current degree srv1(GRIP-OPEN): %d", servos[0].read());
@@ -198,7 +198,7 @@ void loop()
             //     digitalWrite(stepPin, LOW);
             //     delayMicroseconds(1500);
             // }
-
+            stepper.enableOutputs();
             stepper.move(stepper_step(2, MICRO_STEP));
             stepper.runToPosition();
             Serial.print("Base clocwise:");
@@ -217,7 +217,7 @@ void loop()
             //     digitalWrite(stepPin, LOW);
             //     delayMicroseconds(1500);
             // }
-
+            stepper.enableOutputs();
             stepper.move(stepper_step(-2, MICRO_STEP));
             stepper.runToPosition();
             Serial.print("Base anti-clockwise:");
@@ -292,6 +292,7 @@ void loop()
         }
         break;
         default:
+            stepper.disableOutputs();
             break;
         }
     }

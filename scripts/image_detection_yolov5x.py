@@ -1,5 +1,6 @@
 import argparse
 from statistics import mode
+from tkinter.messagebox import NO
 import torch
 from matplotlib import pyplot as plt
 import cv2
@@ -11,9 +12,9 @@ from std_msgs.msg import Int16MultiArray
 
 import math
 from colorama import Fore, Style
+import aruco_detect as aruco
 
-
-class RosConnection:
+class InverseKinematics:
     def __init__(self) -> None:
 
         self.pub = rospy.Publisher('cmd_angle', Int16MultiArray, queue_size=10)
@@ -22,7 +23,7 @@ class RosConnection:
         self.busy = False
         self.coords_to_send = []
         self.origin = (700,10)
-        self.HEIGHT = 15 # 15 cm
+        self.HEIGHT = 16 # 16 cm
         self.NAMES = {
             'paper': 1,
             'paper_cup' : 1,
@@ -75,7 +76,7 @@ class RosConnection:
 
 
             
-    def inv_kinematics(self, r, z, l1=10, l2=10):
+    def inv_kinematics(self, r, z, l1=20, l2=22):
         if not (-1 <= (r**2+z**2-l1**2-l2**2)/(2*l1*l2) <= 1):
             # domain test of acos
             # also limit that is possible for the two links to reach
@@ -84,7 +85,7 @@ class RosConnection:
         # Equations for Inverse kinematics
         phi_2 = (math.acos((r**2+z**2-l1**2-l2**2)/(2*l1*l2)))  # eqn 2
         phi_1 = math.atan2(z, r) + math.atan2(l2*math.sin(phi_2), (l1 + l2*math.cos(phi_2))) # eqn 3
-        phi_2 = -phi_2
+        # phi_2 = -phi_2
         #theta_1 = rad2deg(phi_2-phi_1)  # eqn 4 converted to degrees
 
         #phi_3 = arccos((r1**2-arm1**2-arm1**2)/(-2*arm1*arm2))
@@ -137,9 +138,13 @@ def add_dot_and_label(img, xc, yc, conf, cls, name, clr=None):
     return img
 
 def webcam(source=0):
-    roscon = RosConnection()
+    roscon = InverseKinematics()
+    invert = False
+    if len(source) == 1:
+        source = int(source)
+        if source == 0: # if webcam then flip
+            invert = True
     cap = cv2.VideoCapture(source)
-    
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 3) # set buffer size
     batch_size = 1
     images = []
@@ -151,55 +156,61 @@ def webcam(source=0):
     im_count = 0
     while True:
         ret, img = cap.read()
-        img = cv2.flip(img, 1)  # flip left-right
+        if invert: # flip right left
+            img = cv2.flip(img, 1)  # flip left-right
         if ret:
             images += [img]
         if (len(images) == batch_size) or (ret == False and len(images) > 0):
             for i in range(len(images)):
                 t1 = dt.time_sync()
-                
-                pred = model(images[i])
-                for idx, (xc, yc, w, h, conf, cls, name) in pred.pandas().xywh[0].iterrows():
-                    images[i] = add_dot_and_label(images[i], int(xc), int(yc), conf, cls, name)
-                    
-                    if cls_count[name]:
-                        cls_count[name] += 1
-                    else:
-                        cls_count[name] = 1
-                    
-                    if len(cls_coords) == 0:
-                        cls_coords = [[name, xc, yc, 1]]
-                    else: 
+                try:
+                    found, warped = aruco.get_warped(images[i])
+                except TypeError as e:
+                    print(f"{Fore.LIGHTRED_EX}{e}{Style.RESET_ALL}")
+                    continue
+                if found:
+                    pred = model(warped)
+                    for idx, (xc, yc, w, h, conf, cls, name) in pred.pandas().xywh[0].iterrows():
+                        warped = add_dot_and_label(warped, int(xc), int(yc), conf, cls, name)
+                        
+                        if cls_count[name]:
+                            cls_count[name] += 1
+                        else:
+                            cls_count[name] = 1
+                        
+                        if len(cls_coords) == 0:
+                            cls_coords = [[name, xc, yc, 1]]
+                        else: 
+                            for i, (nm, xx, yy, n) in enumerate(cls_coords):
+                                if abs(xx-xc) < 10 and abs(yy-yc) < 10: # 10 pixel error margin
+                                    if nm == name:
+                                        cls_coords[i] = [nm,xc,yc,n+1]
+
+                                        
+
+                    s = '['
+                    for n, c in cls_count.items():
+                        if c > 0: 
+                            s += f" {n}:{c},"
+                            cls_count[n] = 0
+                    del_t = dt.time_sync() - t1
+                    s += f"] Done in:{del_t} sec"
+                    print(s)
+                    im_count+=1
+                    if im_count >= 5: # See for 5 frames
+                        im_count = 0
+                        coords = []
                         for i, (nm, xx, yy, n) in enumerate(cls_coords):
-                            if abs(xx-xc) < 10 and abs(yy-yc) < 10: # 10 pixel error margin
-                                if nm == name:
-                                    cls_coords[i] = [nm,xc,yc,n+1]
+                            if n >= 4: # if 4 hits total in 5 frames
+                                coords.append([nm, xx, yy])
+                        if not roscon.busy:
+                            rospy.loginfo(f"roscon no busy, sending:{coords}")
+                            roscon.send_coords(coords=coords)
+                        cls_coords = []
 
-                                    
-
-                s = '['
-                for n, c in cls_count.items():
-                    if c > 0: 
-                        s += f" {n}:{c},"
-                        cls_count[n] = 0
-                del_t = dt.time_sync() - t1
-                s += f"] Done in:{del_t} sec"
-                print(s)
-                im_count+=1
-                if im_count >= 5: # See for 5 frames
-                    im_count = 0
-                    coords = []
-                    for i, (nm, xx, yy, n) in enumerate(cls_coords):
-                        if n >= 4: # if 4 hits total in 5 frames
-                            coords.append([nm, xx, yy])
-                    if not roscon.busy:
-                        rospy.loginfo(f"roscon no busy, sending:{coords}")
-                        roscon.send_coords(coords=coords)
-                    cls_coords = []
-
-                # print fps on image
-                images[i] = cv2.putText(images[i], f"FPS:{1/del_t:.2f}", (10, images[i].shape[0]-10), cv2.FONT_HERSHEY_SIMPLEX, (1.1e-3 * images[i].shape[0]), (255,255,255), thickness=3)
-                cv2.imshow('video with bboxes', images[i])
+                    # print fps on image
+                    warped = cv2.putText(warped, f"FPS:{1/del_t:.2f}", (10, images[i].shape[0]-10), cv2.FONT_HERSHEY_SIMPLEX, (1.1e-3 * warped.shape[0]), (255,255,255), thickness=3)
+                    cv2.imshow('video with bboxes', warped)
             images = []
         if cv2.waitKey(1) == ord('q'):
             break  # q to quit

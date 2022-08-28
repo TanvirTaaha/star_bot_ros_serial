@@ -51,8 +51,8 @@ class ArduinoController:
                 self.arduino_callback(m) # calling first time 
 
     def get_angles(self):
-        pick_up = [110, 100, 30]
-        put_down = [30, 80, 30]
+        pick_up = [119, 128, 10] # [shoulder_angle, elbow_angle, pitch_angle]
+        put_down = [19, 72, 30] # [shoulder_angle, elbow_angle, pitch_angle]
         B_ANGLES = {
             -1: 0, # default
             1: 75,

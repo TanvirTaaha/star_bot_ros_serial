@@ -11,10 +11,11 @@
 #include <AccelStepper.h>
 #define SHO_REF 28
 #define ELB_REF 36
-#define PIT_REF 107
+#define PIT_REF 100
 const uint8_t dirPin = 2;
 const uint8_t stepPin = 3;
 #define MICRO_STEP 1
+#define ST_EN_PIN 48
 
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 
@@ -46,6 +47,7 @@ void setup()
     servos[2].attach(SRV_PINs[2]);
     servos[3].attach(SRV_PINs[3]);
 
+    pinMode(ST_EN_PIN, OUTPUT);
     stepper.setMaxSpeed(200);     // SPEED = Steps / second
     stepper.setAcceleration(150); // ACCELERATION = Steps /(second)^2
     // stepper.disableOutputs(); //disable outputs, so the motor is not getting warm (no current)
@@ -198,11 +200,15 @@ void loop()
             //     digitalWrite(stepPin, LOW);
             //     delayMicroseconds(1500);
             // }
+            digitalWrite(ST_EN_PIN, LOW);
+            delayMicroseconds(10);
             stepper.enableOutputs();
             stepper.move(stepper_step(2, MICRO_STEP));
             stepper.runToPosition();
             Serial.print("Base clocwise:");
             Serial.println(stepper_degree(stepper.currentPosition(), MICRO_STEP));
+            delayMicroseconds(10);
+            digitalWrite(ST_EN_PIN, HIGH);
         }
         break;
         case 'j': // Base down
@@ -217,11 +223,15 @@ void loop()
             //     digitalWrite(stepPin, LOW);
             //     delayMicroseconds(1500);
             // }
+            digitalWrite(ST_EN_PIN, LOW);
+            delayMicroseconds(10);
             stepper.enableOutputs();
             stepper.move(stepper_step(-2, MICRO_STEP));
             stepper.runToPosition();
             Serial.print("Base anti-clockwise:");
             Serial.println(stepper_degree(stepper.currentPosition(), MICRO_STEP));
+            delayMicroseconds(10);
+            digitalWrite(ST_EN_PIN, HIGH);
         }
         break;
         case 'q':

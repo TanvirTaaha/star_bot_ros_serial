@@ -6,28 +6,31 @@
 #include <AccelStepper.h>
 #include <string.h>
 
+#define CHECK_LIM(x, l, h) ((l <= x || x <= h) ? x : l)
+
 uint8_t SRV_PINs[] = {6, 9, 10, 11};
 Servo servos[4];
 #define INIT_DEG \
   (uint8_t[]) { 10, 10, 10, 10 }
 #define LOWEST_PWM 525
 #define HIGHEST_PWM 2361
-#define GRIP_CLOSE_ANGLE 9
+#define GRIP_CLOSE_ANGLE 5
 #define GRIP_OPEN_ANGLE 60
 
 #define SHO_REF 28 // 28
 #define ELB_REF 36 // 36
-#define PIT_REF 107
+#define PIT_REF 100
 
 const uint8_t dirPin = 2;
 const uint8_t stepPin = 3;
 #define MICRO_STEP 1
+#define ST_EN_PIN 48
 AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 
 char buff[50];
 bool runEnabled = false;
 bool newCommand = false;
-bool grip_close ;
+bool grip_close;
 int16_t base_angle, shoulder_angle, elbow_angle, pitch_angle;
 void go_to_default_position_all();
 int deg_for_big_servo(int deg);
@@ -48,17 +51,17 @@ void pitch_to(int16_t deg);
 void grip();
 void messageCb(const std_msgs::Int16MultiArray &msg);
 
-bool shoulderDone = true, elbowDone = true, baseDone = true;
+bool shoulderDone = true, elbowDone = true, baseDone = true, pitchDone = true;
 
 ros::NodeHandle nh;
 ros::Subscriber<std_msgs::Int16MultiArray> sub("arduino_input", messageCb);
 std_msgs::Int16 int_msg;
 ros::Publisher output("arduino_output", &int_msg);
 
-
 void messageCb(const std_msgs::Int16MultiArray &msg)
 {
-  // Text format: "{base angle},{shoulder angle from horizontal},{elbow angle from vertical},{pitch angle from vertical}"
+  nh.loginfo("Ashche msg");
+  // [base_angle, shoulder_angle, elbow_angle, pitch_angle, grip_close] 
   if (msg.data_length != 5)
   {
     nh.loginfo("got unsupported msg");
@@ -68,12 +71,13 @@ void messageCb(const std_msgs::Int16MultiArray &msg)
   baseDone = base_angle == msg.data[0];
   shoulderDone = shoulder_angle == SHO_REF + msg.data[1];
   elbowDone = elbow_angle == ELB_REF + msg.data[2];
+  pitchDone = pitch_angle == PIT_REF + msg.data[3];
 
-  base_angle = msg.data[0];
-  shoulder_angle = SHO_REF + msg.data[1];
-  elbow_angle = ELB_REF + msg.data[2];
-  pitch_angle = PIT_REF + msg.data[3]; //pitch motor is reversed
-  grip_close = msg.data[4] > 0; // 1=close, 0=open
+  base_angle = CHECK_LIM(msg.data[0], -70, 70);
+  shoulder_angle = CHECK_LIM(SHO_REF + msg.data[1], SHO_REF, 170);
+  elbow_angle = CHECK_LIM(ELB_REF + msg.data[2], 0, 170);
+  pitch_angle = CHECK_LIM(PIT_REF + msg.data[3], 3, 170); // pitch motor is reversed
+  grip_close = msg.data[4] > 0;                           // 1=close, 0=open
   if (newCommand)
   {
     nh.loginfo("Got angles before execusion done");
@@ -81,20 +85,20 @@ void messageCb(const std_msgs::Int16MultiArray &msg)
   sprintf(buff, "Angles:bs:%d,sh:%d,el:%d,pi:%d,gr:%d", base_angle, shoulder_angle, elbow_angle, pitch_angle, grip_close);
   nh.loginfo(buff);
   nh.loginfo(buff); // Jeno dekhte miss na jay
-  
+
   newCommand = true;
   runEnabled = true;
-  
 }
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(57600);
   servos[0].attach(SRV_PINs[0]);
   servos[1].attach(SRV_PINs[1]);
   servos[2].attach(SRV_PINs[2]);
   servos[3].attach(SRV_PINs[3]);
 
+  pinMode(ST_EN_PIN, OUTPUT);
   stepper.setMaxSpeed(200);     // SPEED = Steps / second
   stepper.setAcceleration(150); // ACCELERATION = Steps /(second)^2
 
@@ -105,12 +109,11 @@ void setup()
   nh.loginfo("In setup....");
   delay(100);
 
- 
   // default
-  servos[0].write(10);
+  servos[0].write(10); // grip
   gently_rotate_to(1, PIT_REF);
   go_to_degree_big_servo(2, deg_for_big_servo(abs(ELB_REF)));
-  go_to_degree_big_servo(3, deg_for_big_servo(SHO_REF+70));
+  go_to_degree_big_servo(3, deg_for_big_servo(SHO_REF + 70));
   stepper.setCurrentPosition(0);
 }
 
@@ -125,41 +128,46 @@ void loop()
 
   if (newCommand && runEnabled)
   {
-    sprintf(buff, "Inside if..bs:%d, sh:%d, el:%d, gr:%d", baseDone, shoulderDone, elbowDone, grip_close);
+    sprintf(buff, "In If.bs:%d,sh:%d,el:%d,pit:%d,gr:%d", baseDone, shoulderDone, elbowDone, pitchDone, grip_close);
     nh.loginfo(buff);
     if (!baseDone)
     {
-      stepper.enableOutputs();
+      // stepper.enableOutputs();
+      digitalWrite(ST_EN_PIN, LOW); // enable stepper
       stepper.moveTo(stepper_step(base_angle, MICRO_STEP));
       stepper.runToPosition();
       delayMicroseconds(10);
       baseDone = !stepper.run();
-      sprintf(buff, "Base Done:bs:%d,sh:%d,el:%d", baseDone, shoulderDone, elbowDone);
+      sprintf(buff, "Base Done:bs:%d,sh:%d,el:%d,pit:%d", baseDone, shoulderDone, elbowDone, pitchDone);
       nh.loginfo(buff);
       if (baseDone)
       {
-        stepper.disableOutputs();
+        // stepper.disableOutputs();
+        digitalWrite(ST_EN_PIN, HIGH); // disable stepper
       }
-    } 
+    }
     else // if base done
     {
-      stepper.disableOutputs();
+      digitalWrite(ST_EN_PIN, HIGH); // disable stepper
     }
     if (!shoulderDone)
     {
       // move_shoulder_onedeg();
-      move_shoulder(shoulder_angle);
+      move_shoulder((shoulder_angle));
+    }
+    if (!pitchDone)
+    {
+      pitch_to(pitch_angle);
     }
     if (!elbowDone)
     {
       // move_elbow_onedeg();
-      move_elbow(elbow_angle);
+      move_elbow((elbow_angle));
     }
-    if (baseDone && shoulderDone && elbowDone) 
+    if (baseDone && shoulderDone && elbowDone && pitchDone)
     {
-      sprintf(buff, "B,S,E Done:bs:%d,sh:%d,el:%d,gr:%d", baseDone, shoulderDone, elbowDone, grip_close);
+      sprintf(buff, "Done:bs:%d,sh:%d,el:%d,pit:%d,gr:%d", baseDone, shoulderDone, elbowDone, pitchDone, grip_close);
       nh.logdebug(buff);
-      pitch_to(pitch_angle);
       grip();
       int_msg.data = 1;
       output.publish(&int_msg);
@@ -170,11 +178,11 @@ void loop()
     {
       int_msg.data = 0;
       output.publish(&int_msg);
-      sprintf(buff,"arduino doing job");
+      sprintf(buff, "arduino doing job");
       nh.loginfo(buff);
     }
   }
-  else 
+  else
   {
     sprintf(buff, "newCommand==false:arduino doing nothing");
     nh.loginfo(buff);
@@ -192,6 +200,7 @@ void stopMotor() // function activated by the pressed microswitch
   stepper.stop();                // stop motor
   stepper.setCurrentPosition(0); // reset position
   // stepper.disableOutputs(); //disable power
+  digitalWrite(ST_EN_PIN, HIGH); // disable stepper
 }
 
 void go_to_default_position_all()
@@ -220,10 +229,14 @@ void gently_rotate_to(uint8_t srv_idx, int16_t degree)
 {
   int16_t c_pos = get_current_pos(srv_idx);
   int16_t pos;
+  sprintf(buff, "c_pos:%d", c_pos);
+  nh.loginfo(buff);
   if (degree < c_pos)
   {
     for (pos = c_pos; pos >= degree; pos -= 1)
     {
+      sprintf(buff, "srv:%d, <<<", srv_idx);
+      nh.loginfo(buff);
       servos[srv_idx].write(pos);
       Serial.print("degree: ");
       Serial.println(pos);
@@ -234,6 +247,8 @@ void gently_rotate_to(uint8_t srv_idx, int16_t degree)
   {
     for (pos = c_pos; pos <= degree; pos += 1)
     {
+      sprintf(buff, "srv:%d, >>>", srv_idx);
+      nh.loginfo(buff);
       servos[srv_idx].write(pos);
       Serial.print("degree: ");
       Serial.println(pos);
@@ -257,23 +272,32 @@ uint16_t get_current_pos_pulse(int16_t srv_idx)
 
 void go_to_degree_big_servo(uint8_t servoIdx, int16_t deg)
 {
+  nh.loginfo("BAAL:DHUKSE");
   if (big_servo_to_deg(servos[servoIdx].read()) == deg)
+  {
+    nh.loginfo("BAAL:EQUAL");
     return;
-
+  }
   if (big_servo_to_deg(servos[servoIdx].read()) < deg)
   {
     while (big_servo_to_deg(servos[servoIdx].read()) <= deg)
     {
+      sprintf(buff, "srv:%d, >>>", servoIdx);
+      nh.loginfo(buff);
       servos[servoIdx].write(servos[servoIdx].read() + 1);
       delay(100);
+      nh.spinOnce();
     }
   }
   else
   {
     while (big_servo_to_deg(servos[servoIdx].read()) >= deg)
     {
+      sprintf(buff, "srv:%d, <<<", servoIdx);
+      nh.loginfo(buff);
       servos[servoIdx].write(servos[servoIdx].read() - 1);
       delay(100);
+      nh.spinOnce();
     }
   }
 }
@@ -299,7 +323,7 @@ void move_elbow_onedeg()
 {
   int16_t current_deg = big_servo_to_deg(servos[2].read());
   bool checked = false;
-  if(abs(current_deg-elbow_angle) <= 1)
+  if (abs(current_deg - elbow_angle) <= 1)
   {
     checked = true;
   }
@@ -311,7 +335,7 @@ void move_elbow_onedeg()
   {
     go_to_degree_big_servo(2, current_deg - 1);
   }
-  if(abs(current_deg-elbow_angle) <= 1 && checked)
+  if (abs(current_deg - elbow_angle) <= 1 && checked)
   {
     elbowDone = true;
   }
@@ -319,16 +343,16 @@ void move_elbow_onedeg()
 
 void move_elbow(int16_t deg)
 {
-  bool checked = (abs(big_servo_to_deg(servos[2].read())-deg) <= 1); // if was close to +/- 1 deg
-  go_to_degree_big_servo(2, deg_for_big_servo(deg)); // then rotated
-  elbowDone = (abs(big_servo_to_deg(servos[2].read())-deg) <= 1 && checked); // still the same then definitely done
+  bool checked = (abs(big_servo_to_deg(servos[2].read()) - deg) <= 3);         // if was close to +/- 3 deg
+  go_to_degree_big_servo(2, (deg));                                            // then rotated
+  elbowDone = (abs(big_servo_to_deg(servos[2].read()) - deg) <= 3 && checked); // still the same then definitely done
 }
 
 void move_shoulder_onedeg()
 {
   int16_t current_deg = big_servo_to_deg(servos[3].read());
   bool checked = false;
-  if(abs(current_deg-shoulder_angle) <= 1)
+  if (abs(current_deg - shoulder_angle) <= 1)
   {
     checked = true;
   }
@@ -340,7 +364,7 @@ void move_shoulder_onedeg()
   {
     go_to_degree_big_servo(3, current_deg - 1);
   }
-  if (abs(current_deg-shoulder_angle) <= 1 && checked)
+  if (abs(current_deg - shoulder_angle) <= 1 && checked)
   {
     shoulderDone = true;
   }
@@ -348,25 +372,58 @@ void move_shoulder_onedeg()
 
 void move_shoulder(int16_t deg)
 {
-  bool checked = (abs(big_servo_to_deg(servos[3].read())-deg) <= 1); // if was close to +/- 1 deg
-  go_to_degree_big_servo(3, deg_for_big_servo(deg)); // then rotated
-  shoulderDone = (abs(big_servo_to_deg(servos[3].read())-deg) <= 1 && checked); // still the same then definitely done
+  bool checked = (abs(big_servo_to_deg(servos[3].read()) - deg) <= 3); // if was close to +/- 3 deg
+  go_to_degree_big_servo(3, (deg));                                               // then rotated
+  shoulderDone = (abs(big_servo_to_deg(servos[3].read()) - deg) <= 3 && checked); // still the same then definitely done
 }
 
 void pitch_to(int16_t deg)
 {
-  // todo angle conversion
-  gently_rotate_to(1, deg);
+  if (abs(deg - servos[1].read()) <= 1)
+  {
+    nh.loginfo("PITCH EQUAL");
+    return;
+  }
+  if (deg < servos[1].read()) 
+  {
+    while(deg < servos[1].read())
+    {
+      servos[1].write(servos[1].read() - 1);
+      nh.spinOnce();
+    }
+  }
+  else 
+  {
+    while (deg > servos[1].read())
+    {
+      servos[1].write(servos[1].read() + 1);
+      nh.spinOnce();
+    }
+  }
 }
 
 void grip()
 {
-  if (grip_close) // close the gripper
+  int16_t gr_angle = grip_close ? GRIP_CLOSE_ANGLE : GRIP_OPEN_ANGLE;
+  if (abs(gr_angle - servos[0].read()) <= 1)
   {
-    gently_rotate_to(0, GRIP_CLOSE_ANGLE);
+    nh.loginfo("GRIP EQUAL");
+    return;
   }
-  else
-  { // open the gripper
-    gently_rotate_to(0, GRIP_OPEN_ANGLE);
+  if (gr_angle < servos[0].read()) 
+  {
+    while(gr_angle < servos[0].read())
+    {
+      servos[0].write(servos[0].read() - 1);
+      nh.spinOnce();
+    }
+  }
+  else 
+  {
+    while (gr_angle > servos[0].read())
+    {
+      servos[0].write(servos[0].read() + 1);
+      nh.spinOnce();
+    }
   }
 }

@@ -52,12 +52,12 @@ class ArduinoController:
 
     def get_angles(self):
         pick_up = [119, 128, 10] # [shoulder_angle, elbow_angle, pitch_angle]
-        put_down = [19, 72, 30] # [shoulder_angle, elbow_angle, pitch_angle]
+        put_down = [80, 72, 30] # [shoulder_angle, elbow_angle, pitch_angle]
         B_ANGLES = {
             -1: 0, # default
-            1: 75,
-            2: -75,
-            3: 180
+            1: 30,
+            2: -30,
+            3: 60
         }
         seq = [
             [*self.angle_msg.data], # go as per ik and grip(as set in angle_callback)

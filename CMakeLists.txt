@@ -162,6 +162,7 @@ catkin_install_python(PROGRAMS
   scripts/inverse_kinematics.py
   scripts/image_detection_yolov5x.py
   scripts/ros_test.py
+  scripts/aruco_detect.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

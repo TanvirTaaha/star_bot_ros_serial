@@ -32,14 +32,14 @@ def findArucoMarkers(img, markerSize=4, totalMarkers=250, draw=True):
     bboxs = []
     ids = []
     bboxs, ids, rejected = aruco.detectMarkers(imgGray, arucoDict, parameters=arucoParam)
-    print(ids)
+    # print(ids)
     if draw:
         aruco.drawDetectedMarkers(img, bboxs)
     return (ids, bboxs) if not np.logical_or(ids == None, bboxs == None).any() else None
 
 
 def get_ref_rectangle(ids, boxs):
-    print(f"boxs:{boxs}")
+    # print(f"boxs:{boxs}")
     rect = [[],[],[],[]]
     CORNERS = {
         23 : 1,
@@ -48,18 +48,24 @@ def get_ref_rectangle(ids, boxs):
         69 : 4}
     for i, id in enumerate(ids):
         id = id[0]
-        print(f"i:{i}")
+        # print(f"i:{i}")
         x_sum = boxs[i][0][0][0]+ boxs[i][0][1][0]+ boxs[i][0][2][0]+ boxs[i][0][3][0]
         y_sum = boxs[i][0][0][1]+ boxs[i][0][1][1]+ boxs[i][0][2][1]+ boxs[i][0][3][1]
 
         x_centerPixel = x_sum / 4
         y_centerPixel = y_sum / 4
         rect[CORNERS[id]-1] = (int(x_centerPixel), int(y_centerPixel))
+
+    # if sum(1 if len(x) == 2 else 0 for x in rect) == 4:
+    #     rect = sorted(rect, key=lambda x: x[1]) # sort by x value
+    #     (rect[0], rect[1]) == (rect[1], rect[0]) if rect[1][0] < rect[0][0] else (rect[0], rect[1])
+    #     (rect[2], rect[3]) == (rect[3], rect[2]) if rect[3][0] > rect[2][0] else (rect[2], rect[3])
+        
     return rect
 
 def four_point_transform(image, rect):
     (tl, tr, br, bl) = rect
-    print((tl, tr, br, bl))
+    # print((tl, tr, br, bl))
     # compute the width of the new image, which will be the
     # maximum distance between bottom-right and bottom-left
     # x-coordiates or the top-right and top-left x-coordinates
@@ -105,7 +111,7 @@ def get_warped(frame):
     aruco_found = findArucoMarkers(frame)
 
     if aruco_found:
-        print(f"aruco_found:{aruco_found}")
+        # print(f"aruco_found:{aruco_found}")
         try:
             rect = get_ref_rectangle(aruco_found[0], aruco_found[1])
         except KeyError as e:
@@ -115,7 +121,7 @@ def get_warped(frame):
         if sum([1 if len(x)==2 else 0 for x in rect]) == 4:
         
             for i, p in enumerate(rect):
-                print(f"p:{p}, type:{type(p)}")
+                # print(f"p:{p}, type:{type(p)}")
                 cv2.putText(frame, str(i+1), (p[0],p[1]), cv2.FONT_HERSHEY_SIMPLEX, (1.1e-3 * frame.shape[0]), (0,0,255), 3)
         
             overlay = frame.copy()
@@ -125,7 +131,7 @@ def get_warped(frame):
             alpha = 0.4
             frame = cv2.addWeighted(overlay, alpha, frame, 1-alpha, 0)
     
-            print(rect)
+            # print(rect)
             warped = four_point_transform(original_frame, rect=rect)
             # cv2.imshow('warped', warped)
             found = True
@@ -153,7 +159,7 @@ def main():
             aruco_found = findArucoMarkers(frame)
         
             if aruco_found:
-                print(f"aruco_found:{aruco_found}")
+                # print(f"aruco_found:{aruco_found}")
                 try:
                     rect = get_ref_rectangle(aruco_found[0], aruco_found[1])
                 except KeyError as e:
@@ -163,7 +169,7 @@ def main():
                 if sum([1 if len(x)==2 else 0 for x in rect]) == 4:
                 
                     for i, p in enumerate(rect):
-                        print(f"p:{p}, type:{type(p)}")
+                        # print(f"p:{p}, type:{type(p)}")
                         cv2.putText(frame, str(i+1), (p[0],p[1]), cv2.FONT_HERSHEY_SIMPLEX, (1.1e-3 * frame.shape[0]), (0,0,255), 3)
                 
                     overlay = frame.copy()
@@ -173,7 +179,7 @@ def main():
                     alpha = 0.4
                     frame = cv2.addWeighted(overlay, alpha, frame, 1-alpha, 0)
             
-                    print(rect)
+                    # print(rect)
                     warped = four_point_transform(original_frame, rect=rect)
                     cv2.imshow('warped', warped)
 
